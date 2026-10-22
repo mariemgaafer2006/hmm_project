@@ -1,0 +1,43 @@
+digraph HmmAlloc {
+  graph [rankdir=TB, fontname="Helvetica", labelloc=t, fontsize=20, label="HmmAlloc(size) flowchart", nodesep=0.5, ranksep=0.45];
+  node  [fontname="Helvetica", fontsize=12, style=filled, fillcolor="#f4f7fb", color="#4a6fa5"];
+  edge  [fontname="Helvetica", fontsize=11, color="#555555"];
+
+  start [label="HmmAlloc(size)", shape=oval, fillcolor="#d6e9c6", color="#3c763d"];
+  zero  [label="size == 0 ?", shape=diamond, fillcolor="#fcf8e3", color="#8a6d3b"];
+  one   [label="size = 1", shape=box];
+  big   [label="size > HMM_HEAP_MAX ?", shape=diamond, fillcolor="#fcf8e3", color="#8a6d3b"];
+  align [label="payload = align_up(size, 16)", shape=box];
+  find  [label="First-fit search in the free list\n(first free block with block.size >= payload)", shape=box];
+  found [label="block found ?", shape=diamond, fillcolor="#fcf8e3", color="#8a6d3b"];
+  tailfree [label="last block of the heap is free ?", shape=diamond, fillcolor="#fcf8e3", color="#8a6d3b"];
+  growtail [label="Raise the simulated break by\nceil(missing bytes / 128KB) * 128KB\nand enlarge the last free block", shape=box];
+  growneww [label="Raise the simulated break by\nceil((header + payload) / 128KB) * 128KB\nand append a new free block", shape=box];
+  brkok [label="break raised ?\n(heap area not exhausted)", shape=diamond, fillcolor="#fcf8e3", color="#8a6d3b"];
+  remove [label="Remove the block from the free list\nmark it USED", shape=box];
+  split [label="block.size - payload >= header + 16 ?", shape=diamond, fillcolor="#fcf8e3", color="#8a6d3b"];
+  cut   [label="Split: the remainder becomes a free block\n(released, merged with a free neighbour)", shape=box];
+  ret   [label="return block + header size", shape=oval, fillcolor="#d6e9c6", color="#3c763d"];
+  fail  [label="errno = ENOMEM\nreturn NULL", shape=oval, fillcolor="#f2dede", color="#a94442"];
+
+  start -> zero;
+  zero -> one [label="yes"];
+  zero -> big [label="no"];
+  one -> big;
+  big -> fail [label="yes"];
+  big -> align [label="no"];
+  align -> find;
+  find -> found;
+  found -> remove [label="yes"];
+  found -> tailfree [label="no"];
+  tailfree -> growtail [label="yes"];
+  tailfree -> growneww [label="no"];
+  growtail -> brkok;
+  growneww -> brkok;
+  brkok -> fail [label="no"];
+  brkok -> remove [label="yes"];
+  remove -> split;
+  split -> cut [label="yes"];
+  split -> ret [label="no (keep as slack)"];
+  cut -> ret;
+}

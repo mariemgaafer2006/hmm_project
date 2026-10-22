@@ -1,0 +1,37 @@
+digraph HmmFree {
+  graph [rankdir=TB, fontname="Helvetica", labelloc=t, fontsize=20, label="HmmFree(ptr) flowchart", nodesep=0.5, ranksep=0.45];
+  node  [fontname="Helvetica", fontsize=12, style=filled, fillcolor="#f4f7fb", color="#4a6fa5"];
+  edge  [fontname="Helvetica", fontsize=11, color="#555555"];
+
+  start [label="HmmFree(ptr)", shape=oval, fillcolor="#d6e9c6", color="#3c763d"];
+  isnull [label="ptr == NULL ?", shape=diamond, fillcolor="#fcf8e3", color="#8a6d3b"];
+  valid [label="ptr is a live block of our heap ?\n(inside heap, 16-byte aligned,\nheader magic == USED)", shape=diamond, fillcolor="#fcf8e3", color="#8a6d3b"];
+  err   [label="Report with write(2)\n(invalid pointer or double free)\nand ignore it", shape=box, fillcolor="#f2dede", color="#a94442"];
+  mark  [label="header = ptr - header size\nmark the block FREE", shape=box];
+  nextfree [label="next block is free ?", shape=diamond, fillcolor="#fcf8e3", color="#8a6d3b"];
+  mergenext [label="Remove next block from the free list\nblock.size += header + next.size", shape=box];
+  prevfree [label="previous block is free ?", shape=diamond, fillcolor="#fcf8e3", color="#8a6d3b"];
+  mergeprev [label="previous.size += header + block.size\n(previous is already in the free list)\nblock = previous", shape=box];
+  insert [label="Insert block at the head of the free list", shape=box];
+  istail [label="block is the last block of the heap\nAND header + size >= 256KB ?", shape=diamond, fillcolor="#fcf8e3", color="#8a6d3b"];
+  shrink [label="Lower the simulated break by (span - 128KB)\nblock.size -= released bytes", shape=box];
+  done  [label="return", shape=oval, fillcolor="#d6e9c6", color="#3c763d"];
+
+  start -> isnull;
+  isnull -> done [label="yes"];
+  isnull -> valid [label="no"];
+  valid -> err [label="no"];
+  valid -> mark [label="yes"];
+  err -> done;
+  mark -> nextfree;
+  nextfree -> mergenext [label="yes"];
+  nextfree -> prevfree [label="no"];
+  mergenext -> prevfree;
+  prevfree -> mergeprev [label="yes"];
+  prevfree -> insert [label="no"];
+  mergeprev -> istail;
+  insert -> istail;
+  istail -> shrink [label="yes"];
+  istail -> done [label="no"];
+  shrink -> done;
+}
