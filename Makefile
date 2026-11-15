@@ -53,7 +53,7 @@ $(STRESS_APP): $(CORE_OBJS) $(EXTRA_DIR)/stress_test.c | $(BUILD_DIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $(EXTRA_DIR)/stress_test.c $(CORE_OBJS)
 
 # Experiment from "The Linux Programming Interface" (free_and_sbrk),
-# adapted to print the simulated program break.
+# prints the real process program break managed by HMM through sbrk().
 free_and_sbrk: $(SBRK_APP)
 
 $(SBRK_APP): $(OBJS) $(EXTRA_DIR)/free_and_sbrk.c | $(BUILD_DIR)

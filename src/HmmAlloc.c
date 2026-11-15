@@ -5,7 +5,7 @@
     HmmAlloc(size)
       1. Round the size up (multiple of 16, at least 16).
       2. First-fit search in the explicit free list.
-      3. Nothing fits -> move the simulated break up (in 128KB steps),
+      3. Nothing fits -> move the program break up (in 128KB steps),
          either by enlarging a free block at the end of the heap or by
          appending a new block.
       4. Split the block if the remainder can hold a header + minimum
@@ -29,7 +29,7 @@ static int normalizeSize(size_t size, size_t *payloadSize)
     size = 1U;                         /* malloc(0) returns a valid pointer */
   }
 
-  if (size > HMM_HEAP_MAX)             /* also prevents overflow below */
+  if (size > (SIZE_MAX - HMM_ALIGNMENT)) /* prevent alignment overflow */
   {
     return -1;
   }
@@ -38,7 +38,7 @@ static int normalizeSize(size_t size, size_t *payloadSize)
   return 0;
 }
 
-/* Moves the simulated break up by at least minBytes, rounded up to a   */
+/* Moves the program break up by at least minBytes, rounded up to a   */
 /* multiple of HMM_BREAK_STEP. If that does not fit in the heap area,   */
 /* the exact amount is tried. Returns the old break or NULL.            */
 static void *growBreak(size_t minBytes, size_t *grown)

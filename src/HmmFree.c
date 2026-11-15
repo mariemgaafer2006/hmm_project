@@ -9,7 +9,7 @@
       3. Mark the block free, merge it with the free block after it and
          the free block before it (coalescing).
       4. If the merged block is the last block of the heap and big enough,
-         lower the simulated program break.
+         lower the real program break.
 */
 
 #include <unistd.h>

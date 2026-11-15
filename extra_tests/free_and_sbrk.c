@@ -1,10 +1,10 @@
 /*
     File : free_and_sbrk.c
-    Desc : Test if free() lowers the (simulated) program break.
+    Desc : Test if free() lowers the real process program break.
 
     This is the experiment of Listing 7-1 in "The Linux Programming
     Interface" (same command line, same idea), written for HMM: instead of
-    sbrk(0) it prints the SIMULATED program break of the allocator.
+    sbrk(0) it prints the REAL program break of the allocator.
 
     Usage: free_and_sbrk num-allocs block-size [step [min [max]]]
 

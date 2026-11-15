@@ -1,68 +1,111 @@
 /*
     File : HmmHeap.c
-    Desc : Simulated heap area, simulated program break, heap state
-           (tail block + explicit free list) and the heap checker.
+    Desc : Real process heap managed with sbrk(), heap state (tail block
+           + explicit free list) and the heap checker.
 */
 
 #include <stdint.h>
+#include <unistd.h>
+#include <errno.h>
 
 #include "HmmInternal.h"
 
 /* ------------------------------------------------------------------ */
-/* Simulated heap and program break                                    */
+/* Real process heap and program break                                  */
 /* ------------------------------------------------------------------ */
 
-/* The "heap": a static array that lives in the .bss segment, so no     */
-/* physical memory is used until a page is touched (like a real heap). */
-static char heapArea[HMM_HEAP_MAX] __attribute__((aligned(HMM_ALIGNMENT)));
-
-/* Simulated program break: number of bytes of heapArea currently in    */
-/* use. heapArea + programBreak is the first address beyond the heap.   */
-static size_t programBreak = 0U;
+/* HMM owns the range [heapStart, heapBreak).  The process break is
+   obtained and moved using sbrk(), not a reserved static array. */
+static char *heapStart = NULL;
+static char *heapBreak = NULL;
 
 static size_t growCount   = 0U;
 static size_t shrinkCount = 0U;
 
-/* Heap state. The heap is a chain of blocks (next/prev) that tiles     */
-/* heapArea[0 .. programBreak) with no gaps.                            */
+/* Heap state. The blocks tile [heapStart, heapBreak) without gaps. */
 static block_t *heapTail = NULL;
 static block_t *freeHead = NULL;
 
+static void initializeHeap(void)
+{
+  if (heapStart == NULL)
+  {
+    void *currentBreak = sbrk(0);
+    if (currentBreak != (void *)-1)
+    {
+      heapStart = (char *)currentBreak;
+      heapBreak = (char *)currentBreak;
+    }
+  }
+}
+
 void *HmmBreakGrow(size_t bytes)
 {
-  char *oldBreak;
+  void *oldBreak;
 
-  if (bytes > (HMM_HEAP_MAX - programBreak))
+  initializeHeap();
+  if (bytes == 0U)
   {
-    return NULL;                       /* heap area exhausted */
+    return sbrk(0);
+  }
+  if (bytes > (size_t)INTPTR_MAX)
+  {
+    errno = ENOMEM;
+    return NULL;
   }
 
-  oldBreak = heapArea + programBreak;
-  programBreak += bytes;
+  oldBreak = sbrk((intptr_t)bytes);
+  if (oldBreak == (void *)-1)
+  {
+    return NULL;
+  }
+
+  heapBreak = (char *)oldBreak + bytes;
   growCount++;
   return oldBreak;
 }
 
 int HmmBreakShrink(size_t bytes)
 {
-  if (bytes > programBreak)
+  void *currentBreak;
+  void *newBreak;
+
+  if ((bytes == 0U) || (bytes > (size_t)INTPTR_MAX) ||
+      (heapStart == NULL) || (heapBreak == NULL))
   {
-    return -1;                         /* cannot go below the heap start */
+    return (bytes == 0U) ? 0 : -1;
   }
 
-  programBreak -= bytes;
+  /* Do not shrink memory if another component has moved the process
+     break behind HMM's back. */
+  currentBreak = sbrk(0);
+  if ((currentBreak == (void *)-1) || (currentBreak != heapBreak) ||
+      (bytes > (size_t)(heapBreak - heapStart)))
+  {
+    return -1;
+  }
+
+  newBreak = sbrk(-((intptr_t)bytes));
+  if (newBreak == (void *)-1)
+  {
+    return -1;
+  }
+
+  heapBreak -= bytes;
   shrinkCount++;
   return 0;
 }
 
 char *HmmHeapStart(void)
 {
-  return heapArea;
+  initializeHeap();
+  return heapStart;
 }
 
 char *HmmHeapBreak(void)
 {
-  return heapArea + programBreak;
+  initializeHeap();
+  return heapBreak;
 }
 
 size_t HmmBreakGrowCount(void)
@@ -153,8 +196,8 @@ block_t *HmmFreeListFirstFit(size_t payloadSize)
 block_t *HmmBlockFromPtr(void *ptr)
 {
   uintptr_t address = (uintptr_t)ptr;
-  uintptr_t lowest  = (uintptr_t)heapArea + HMM_HEADER_SIZE;
-  uintptr_t highest = (uintptr_t)heapArea + programBreak;
+  uintptr_t lowest  = (uintptr_t)heapStart + HMM_HEADER_SIZE;
+  uintptr_t highest = (uintptr_t)heapBreak;
   block_t *block;
 
   if ((address < lowest) || (address >= highest) ||
@@ -184,15 +227,15 @@ block_t *HmmBlockFromPtr(void *ptr)
 
 int HmmCheckHeap(void)
 {
-  char *cursor = heapArea;
-  char *end    = heapArea + programBreak;
+  char *cursor = heapStart;
+  char *end    = heapBreak;
   block_t *previous = NULL;
   size_t freeInHeap = 0U;
   size_t freeInList = 0U;
   block_t *listPrev = NULL;
   block_t *entry;
 
-  if (programBreak == 0U)
+  if (heapStart == NULL)
   {
     return ((heapTail == NULL) && (freeHead == NULL)) ? 0 : -1;
   }

@@ -55,8 +55,6 @@ static void testBasic(void)
   errno = 0;
   CHECK(HmmAlloc((size_t)-1) == NULL);
   CHECK(errno == ENOMEM);
-  CHECK(HmmAlloc(HMM_HEAP_MAX) == NULL);
-  CHECK(HmmAlloc(HMM_HEAP_MAX - 8U) == NULL);
   CHECK_HEAP();
 
   /* free(NULL) is a no-op */
@@ -219,7 +217,7 @@ static void testRealloc(void)
 
   /* a failing realloc leaves the original block valid */
   errno = 0;
-  big = hmmReAlloc(q, HMM_HEAP_MAX);
+  big = hmmReAlloc(q, (size_t)-1);
   CHECK(big == NULL);
   CHECK(errno == ENOMEM);
   CHECK(hmmSize(q) >= 5000U);

@@ -2,7 +2,7 @@
 
 A heap memory manager written in C for Linux. It provides the dynamic memory
 allocation service (`malloc`, `free`, `calloc`, `realloc`) to user space
-programs, using a **simulated program break** instead of calling `sbrk()`.
+programs, using the real process program break through `sbrk()`.
 
 ```c
 void *HmmAlloc(size_t size);                    // allocate `size` bytes
@@ -24,7 +24,7 @@ size_t hmmSize(void *ptr);                      // usable size of a block
 inc/Hmm.h               public API
 inc/HmmInternal.h       block header, constants, internal helper prototypes
 src/heapWrappers.c      malloc/free/calloc/realloc -> Hmm* (provided, unchanged)
-src/HmmHeap.c           simulated heap + program break, free list, heap checker
+src/HmmHeap.c           sbrk-managed heap, free list, heap checker
 src/HmmAlloc.c          HmmAlloc, hmmCalloc, hmmReAlloc, hmmSize
 src/HmmFree.c           HmmFree, block release (coalescing), break shrinking
 test/main.c             provided test (make test)
@@ -37,29 +37,31 @@ Makefile
 
 ## 2. Design
 
-### 2.1 Simulated heap and program break
+### 2.1 Real heap and program break
 
-The real heap of a process is the area between the end of the data segment and
-the *program break*, which `sbrk()` moves. HMM simulates that:
+HMM obtains the current process break with `sbrk(0)` and requests memory
+from the operating system with `sbrk(+n)`. It returns memory at the end of its
+managed region with `sbrk(-n)` when the last free block is large enough.
+There is no static 64 MB heap array and no simulated break counter. The
+allocator tracks the start and current end of the region it has acquired.
 
-```c
-static char   heapArea[HMM_HEAP_MAX];   // 64 MB, lives in .bss (no RAM used until touched)
-static size_t programBreak = 0;         // simulated break: bytes of heapArea in use
-```
+* **Increase the heap**: `HmmBreakGrow(n)` calls `sbrk(n)` and returns the
+  previous break. A failed system call returns `NULL` and leaves HMM state
+  unchanged.
+* **Shrink the heap**: `HmmBreakShrink(n)` first verifies that the process
+  break is still at HMM's expected end, then calls `sbrk(-n)`. It returns
+  `-1` if the request is invalid, the break was moved by another component,
+  or the system call fails.
 
-* **Increase the heap**: `HmmBreakGrow(n)` adds `n` to `programBreak` and
-  returns the old break (like `sbrk(+n)`). It fails with `NULL`, without
-  changing anything, if the heap area is exhausted.
-* **Shrink the heap**: `HmmBreakShrink(n)` subtracts `n` from `programBreak`
-  (like `sbrk(-n)`). It fails with `-1` if `n` is larger than the heap.
-
-The real `sbrk()` is never called, so the process' real break does not move.
+Because `sbrk()` changes the process-wide break, this allocator should not be
+mixed with another allocator or library that independently manages that same
+break. The standard-name wrappers are intended for a controlled test program.
 
 ### 2.2 Block layout
 
 Every block starts with a 32-byte header, followed by the payload that the
 user receives. The heap is a sequence of blocks with no gaps:
-`heapArea[0 .. programBreak)` is completely covered by blocks.
+`[heapStart, heapBreak)` is completely covered by HMM blocks.
 
 ```
         +-----------------------------+  <- block address
@@ -96,8 +98,7 @@ Allocation only walks free blocks, never the allocated ones.
 See the flowchart in section 3.
 
 1. `size == 0` is treated as 1 byte, so `malloc(0)` returns a valid unique
-   pointer (many programs treat `NULL` as an error). A size larger than the heap
-   area fails immediately with `errno = ENOMEM`.
+   pointer (many programs treat `NULL` as an error). A size that overflows alignment fails immediately with `errno = ENOMEM`.
 2. The size is rounded up to a multiple of 16.
 3. **First fit**: the free list is searched for the first block that is large
    enough.
@@ -121,12 +122,12 @@ See the flowchart in section 3.
    the previous block is free this block is merged into it. Adjacent free
    blocks never exist, so fragmentation is kept low.
 5. If the result is the last block of the heap and it spans at least 256 KB,
-   the simulated break is lowered (section 2.6).
+   the real program break is lowered (section 2.6).
 
 ### 2.6 Minimizing break increments and decrements
 
 The real heap avoids calling `sbrk()` for every `malloc`/`free` because system
-calls are expensive. HMM applies the same idea to the simulated break:
+calls are expensive. HMM applies the same idea to the real program break:
 
 | Rule | Value | Effect |
 |------|-------|--------|
@@ -175,7 +176,7 @@ recursively), only `write()` for the error message.
 
 * Not thread-safe (no locking). Fine for single-threaded programs and the
   tests; a multi-threaded program needs a lock around `HmmAlloc`/`HmmFree`.
-* The heap is limited to `HMM_HEAP_MAX` (64 MB); more requests return `NULL`.
+* The allocator has no fixed 64 MB heap cap; requests fail when `sbrk()` or the process address space cannot satisfy them.
 * `posix_memalign`, `aligned_alloc`, `memalign` are not wrapped.
 * First-fit over a LIFO free list: simple, but the search is linear in the
   number of free blocks.
@@ -230,16 +231,15 @@ REALLOC test: succeeded
 CALLOC test: succeeded
 ```
 
-The first test compares the **real** `sbrk(0)` before and after. Because HMM
-uses a simulated break, the real break never moves and the test passes. The
-simulated break itself is tested by the programs below.
+The first test compares the **real** `sbrk(0)` before and after. HMM uses the real process break, so this test observes actual break growth and shrinking. The
+real break itself is tested by the programs below.
 
 ### 5.2 free_and_sbrk (task guideline 6)
 
 `extra_tests/free_and_sbrk.c` is the experiment of Listing 7-1 of *The Linux
 Programming Interface* (same command line:
 `free_and_sbrk num-allocs block-size [step [min [max]]]`), written for HMM so
-that it prints the **simulated** program break. It checks that `free()` lowers
+that it prints the **real** program break. It checks that `free()` lowers
 the break only when the blocks at the **end** of the heap are freed:
 
 ```sh

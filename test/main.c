@@ -5,6 +5,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "HmmInternal.h"
+
 #define SMALL_BLOCKS_ALLOCS_COUNT (1024)
 #define SMALL_BLOCKS_SIZE         (90 - sizeof(size_t))
 #define LARGE_BLOCKS_ALLOCS_COUNT (100)
@@ -79,14 +81,18 @@ int main(void)
     free(ptr[index]);
   }
 
-  if (heapEnd != (char *)sbrk(0))
+  /* HMM now uses the real process break.  Freeing the final blocks may
+     return most of the acquired region to the OS, while retaining one
+     growth step as configured by HMM_BREAK_STEP. */
+  if ((char *)sbrk(0) <= heapEnd + HMM_BREAK_STEP)
   {
-    printf("First test: failed, the old heap end = %p and the new end = %p\n",
-           heapEnd, (char *)sbrk(0));
+    printf("First test: succeeded (break returned close to its start)\n");
   }
   else
   {
-    printf("First test: succeeded\n");
+    printf("First test: failed, initial break = %p, current break = %p\n",
+           heapEnd, (char *)sbrk(0));
+    return EXIT_FAILURE;
   }
 
   for (int index = 0; index < LARGE_BLOCKS_ALLOCS_COUNT; index++)

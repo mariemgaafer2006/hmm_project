@@ -1,7 +1,7 @@
 /*
     File : HmmInternal.h
     Desc : Internal definitions shared by the HMM source files
-           (block header, simulated program break, free list helpers).
+           (block header, sbrk-managed program break, free list helpers).
            Not part of the public API, applications include Hmm.h only.
 */
 
@@ -14,10 +14,7 @@
 /* Tunable parameters                                                  */
 /* ------------------------------------------------------------------ */
 
-/* Size of the simulated heap area (the maximum value of the break).    */
-#define HMM_HEAP_MAX          (64U * 1024U * 1024U)
-
-/* The simulated break only moves in multiples of this step, so a lot   */
+/* The break only moves in multiples of this step, so a lot             */
 /* of small allocations cause one "break call" instead of many.         */
 #define HMM_BREAK_STEP        (128U * 1024U)
 
@@ -71,18 +68,17 @@ _Static_assert((HMM_BREAK_STEP % HMM_ALIGNMENT) == 0U,
                "break step must be a multiple of the alignment");
 
 /* ------------------------------------------------------------------ */
-/* Simulated program break (HmmHeap.c)                                 */
+/* sbrk-managed program break (HmmHeap.c)                                 */
 /* ------------------------------------------------------------------ */
 
-/* Like sbrk(+bytes): returns the old break, or NULL if the heap area  */
-/* is exhausted (the break is left unchanged).                          */
+/* Calls sbrk(+bytes): returns the old break, or NULL on failure.       */
 void *HmmBreakGrow(size_t bytes);
 
-/* Like sbrk(-bytes): returns 0 on success, -1 on failure.             */
+/* Calls sbrk(-bytes): returns 0 on success, -1 on failure.             */
 int HmmBreakShrink(size_t bytes);
 
-char *HmmHeapStart(void);   /* lowest heap address                      */
-char *HmmHeapBreak(void);   /* current simulated program break          */
+char *HmmHeapStart(void);   /* start of HMM-owned sbrk range            */
+char *HmmHeapBreak(void);   /* end of HMM-owned sbrk range              */
 
 /* Number of times the break was moved (statistics / testing).         */
 size_t HmmBreakGrowCount(void);

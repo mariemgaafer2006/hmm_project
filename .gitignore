@@ -3,5 +3,3 @@ build/
 *.d
 *.a
 *.so
-/build/
-

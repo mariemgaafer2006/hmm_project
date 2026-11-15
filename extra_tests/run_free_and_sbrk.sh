@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs the three scenarios of free_and_sbrk and checks the expected result:
 # only the last one (freeing the blocks at the END of the heap) may lower
-# the simulated program break.
+# the real program break.
 
 APP=./build/free_and_sbrk
 status=0
